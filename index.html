@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>World Quiz — 196 Countries</title>
+  <title>World Quiz — Name the Country</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Guess the country by its outline. Includes 196 countries as per your list." />
+  <meta name="description" content="Guess the country by its outline on a world map. Time yourself and try to name them all!" />
   <style>
     :root {
       --bg:#0b0f17; --panel:#101826; --text:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; --ok:#34d399; --bad:#f87171;
@@ -33,14 +33,19 @@
     .correctFlash{animation: flashOk .5s}
     .wrongShake{animation: shake .25s}
     @keyframes flashOk {from {background:rgba(52,211,153,.15)} to {background:transparent}}
-    @keyframes shake {10%, 90% { transform: translateX(-2px) } 20%, 80% { transform: translateX(4px) } 30%, 50%, 70% { transform: translateX(-6px) } 40%, 60% { transform: translateX(6px) }}
+    @keyframes shake {
+      10%, 90% { transform: translateX(-2px) }
+      20%, 80% { transform: translateX(4px) }
+      30%, 50%, 70% { transform: translateX(-6px) }
+      40%, 60% { transform: translateX(6px) }
+    }
     footer{padding:2rem 0; text-align:center; color:var(--muted)}
     .small{font-size:.92rem}
   </style>
 </head>
 <body>
   <header class="container">
-    <h1>🌍 World Quiz <span class="muted">— 196 countries</span></h1>
+    <h1>🌍 World Quiz <span class="muted">— name the country</span></h1>
     <div class="panel ui">
       <div class="row">
         <input id="guess" type="text" placeholder="Type the country name… (press Enter)" autocomplete="off" />
@@ -52,7 +57,7 @@
         <span class="pill" id="status">Loading map…</span>
         <span class="pill">⏱️ Time: <strong id="timer">00:00</strong></span>
         <span class="pill">✅ Correct: <strong id="correct">0</strong></span>
-        <span class="pill">🏁 Remaining: <strong id="remaining">0</strong> / <strong id="total">196</strong></span>
+        <span class="pill">🏁 Remaining: <strong id="remaining">0</strong></span>
       </div>
     </div>
   </header>
@@ -64,129 +69,74 @@
   </main>
 
   <footer class="container">
-    <small>Map data © Natural Earth. Rendered with D3 + TopoJSON. Targets: your 196-country list.</small>
+    <small>Data © Natural Earth via world-atlas. This game excludes Antarctica for fairness.</small>
   </footer>
 
-  <!-- Libraries with fallback mirrors -->
-  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"
-          onerror="this.onerror=null; this.src='https://unpkg.com/d3@7/dist/d3.min.js'"></script>
-  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"
-          onerror="this.onerror=null; this.src='https://unpkg.com/topojson-client@3/dist/topojson-client.min.js'"></script>
-
+  <!-- d3 + topojson (served from fast CDNs; fine for GitHub Pages/Netlify) -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
   <script>
-    // ---------- utilities ----------
+    // ------- utilities -------
     const $ = sel => document.querySelector(sel);
     const pad2 = n => n.toString().padStart(2,'0');
     const normalize = s => s
       .toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-      .replace(/['’`]+/g, " ")
-      .replace(/[^a-z0-9]+/g,' ')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // strip diacritics
+      .replace(/[^a-z0-9]+/g,' ')                       // squash punctuation
       .trim();
 
-    // Warn if opened as file:// (fetch will often fail)
-    if (location.protocol === 'file:') {
-      const warn = "Opened as a local file. To fix map loading, serve it via http(s) — e.g. in Terminal: python -m http.server 5500 (then visit http://localhost:5500) — or publish to GitHub Pages/Netlify.";
-      console.warn(warn);
-      const s = document.getElementById('status');
-      if (s) { s.textContent = warn; s.className = 'pill bad'; }
-    }
-
-    // ---------- your exact 196 list ----------
-    const TARGET_196_RAW = `
-Afghanistan	Albania	Algeria	Andorra	Angola
-Antigua and Barbuda	Argentina	Armenia	Australia	Austria
-Azerbaijan	Bahamas	Bahrain	Bangladesh	Barbados
-Belarus	Belgium	Belize	Benin	Bhutan
-Bolivia	Bosnia and Herzegovina	Botswana	Brazil	Brunei
-Bulgaria	Burkina Faso	Burma	Burundi	Cambodia
-Cameroon	Canada	Cape Verde	Central African Republic	Chad
-Chile	China	Colombia	Comoros	Costa Rica
-Cote d'Ivoire	Croatia	Cuba	Cyprus	Czech Republic
-Democratic Republic of the Congo	Denmark	Djibouti	Dominica	Dominican Republic
-East Timor	Ecuador	Egypt	El Salvador	Equatorial Guinea
-Eritrea	Estonia	Ethiopia	Federated States of Micronesia	Fiji
-Finland	France	Gabon	Gambia	Georgia
-Germany	Ghana	Greece	Grenada	Guatemala
-Guinea	Guinea-Bissau	Guyana	Haiti	Honduras
-Hungary	Iceland	India	Indonesia	Iran
-Iraq	Ireland	Israel	Italy	Jamaica
-Japan	Jordan	Kazakhstan	Kenya	Kiribati
-Kosovo	Kuwait	Kyrgyzstan	Laos	Latvia
-Lebanon	Lesotho	Liberia	Libya	Liechtenstein
-Lithuania	Luxembourg	Macedonia	Madagascar	Malawi
-Malaysia	Maldives	Mali	Malta	Marshall Islands
-Mauritania	Mauritius	Mexico	Moldova	Monaco
-Mongolia	Montenegro	Morocco	Mozambique	Namibia
-Nauru	Nepal	Netherlands	New Zealand	Nicaragua
-Niger	Nigeria	North Korea	Norway	Oman
-Pakistan	Palau	Panama	Papua New Guinea	Paraguay
-Peru	Philippines	Poland	Portugal	Qatar
-Republic of the Congo	Romania	Russia	Rwanda	Saint Kitts and Nevis
-Saint Lucia	Saint Vincent and the Grenadines	Samoa	San Marino	Sao Tome and Principe
-Saudi Arabia	Senegal	Serbia	Seychelles	Sierra Leone
-Singapore	Slovakia	Slovenia	Solomon Islands	Somalia
-South Africa	South Korea	South Sudan	Spain	Sri Lanka
-Sudan	Suriname	Swaziland	Sweden	Switzerland
-Syria	Taiwan	Tajikistan	Tanzania	Thailand
-Togo	Tonga	Trinidad and Tobago	Tunisia	Turkey
-Turkmenistan	Tuvalu	Uganda	Ukraine	United Arab Emirates
-United Kingdom	United States	Uruguay	Uzbekistan	Vanuatu
-Vatican City	Venezuela	Vietnam	Yemen	Zambia
-Zimbabwe
-`;
-    const TARGET_196 = TARGET_196_RAW.split(/\s{2,}|\t|\n/).map(s=>s.trim()).filter(Boolean);
-    const TARGET_196_SET = new Set(TARGET_196.map(s => normalize(s)));
-
-    // ---------- name remaps to match your list ----------
-    const NAME_REMAP = new Map(Object.entries({
-      "czechia": "czech republic",
-      "myanmar": "burma",
-      "eswatini": "swaziland",
-      "cabo verde": "cape verde",
-      "timor leste": "east timor",
-      "timor-leste": "east timor",
-      "lao people s democratic republic": "laos",
-      "russian federation": "russia",
-      "republic of moldova": "moldova",
-      "united republic of tanzania": "tanzania",
-      "syrian arab republic": "syria",
-      "palestine": "palestine",
-      "state of palestine": "palestine",
-      "micronesia": "federated states of micronesia",
-      "federated states of micronesia": "federated states of micronesia",
-      "congo": "republic of the congo",
-      "democratic republic of the congo": "democratic republic of the congo",
-      "north macedonia": "macedonia",
-      "cote d ivoire": "cote d'ivoire",
-      "côte d ivoire": "cote d'ivoire",
-      "korea republic of": "south korea",
-      "republic of korea": "south korea",
-      "korea democratic people s republic of": "north korea",
-      "democratic people s republic of korea": "north korea"
-    }));
-
-    // ---------- extra input aliases ----------
+    // common aliases & old names (expand as desired)
     const ALIASES = new Map(Object.entries({
-      "czech republic": ["czechia"],
-      "burma": ["myanmar"],
-      "swaziland": ["eswatini"],
-      "cape verde": ["cabo verde"],
-      "east timor": ["timor leste","timor-leste"],
-      "federated states of micronesia": ["micronesia","fsm"],
-      "republic of the congo": ["congo brazzaville","roc","congo"],
-      "democratic republic of the congo": ["dr congo","drc","congo kinshasa"],
-      "macedonia": ["north macedonia"],
-      "cote d'ivoire": ["cote divoire","côte d’ivoire","cote d ivoire","ivory coast"],
-      "south korea": ["republic of korea","korea republic of"],
-      "north korea": ["dprk","democratic people s republic of korea"],
-      "united states": ["usa","us","u.s.","u.s.a","united states of america"],
+      "cote d'ivoire": ["ivory coast","cote divoire","cote d ivoire"],
+      "cabo verde": ["cape verde"],
+      "eswatini": ["swaziland"],
+      "myanmar": ["burma"],
+      "russian federation": ["russia"],
+      "democratic republic of the congo": ["drc","congo kinshasa","dr congo"],
+      "republic of the congo": ["congo brazzaville"],
+      "united states of america": ["united states","usa","us","u.s.","u.s.a"],
       "united kingdom": ["uk","u.k.","great britain","britain"],
+      "tanzania": ["united republic of tanzania"],
+      "iran": ["iran islamic republic of","islamic republic of iran"],
+      "bolivia": ["bolivia plurinational state of"],
+      "moldova": ["republic of moldova"],
+      "south korea": ["korea republic of","republic of korea"],
+      "north korea": ["korea democratic people s republic of","dprk"],
+      "laos": ["lao people s democratic republic","lao pdr"],
+      "syria": ["syrian arab republic"],
       "uae": ["united arab emirates"],
-      "turkey": ["turkiye"]
+      "czechia": ["czech republic"],
+      "timor leste": ["east timor"],
+      "turkiye": ["turkey"],
+      "micronesia": ["federated states of micronesia"],
+      "palestine": ["state of palestine"]
     }));
 
-    // ---------- UI refs ----------
+    // Set up game state
+    let features = [];      // GeoJSON country features (with .properties.name)
+    let order = [];         // shuffled order of indices into features
+    let iCurrent = -1;      // index within order[]
+    let startedAt = null;   // Date when first shown
+    let timerId = null;
+    let correctCount = 0;
+    let finished = false;
+
+    const svg = d3.select('#map');
+    const g = svg.append('g');
+    const projection = d3.geoNaturalEarth1().fitSize([960, 520], {type:"Sphere"});
+    const path = d3.geoPath(projection);
+
+    // background sphere / graticule (subtle)
+    g.append('path').datum({type:'Sphere'}).attr('class','sphere').attr('d', path).attr('fill','none');
+    const graticule = d3.geoGraticule();
+    g.append('path').datum(graticule()).attr('class','graticule').attr('d', path)
+      .attr('fill','none').attr('stroke','#233046').attr('stroke-width',.5).attr('opacity',.25);
+
+    // land layer to provide context (dim)
+    const landLayer = g.append('g').attr('aria-hidden','true');
+    // active country outline
+    const focusLayer = g.append('g');
+
     const ui = {
       guess: $('#guess'),
       submit: $('#submit'),
@@ -195,111 +145,44 @@ Zimbabwe
       status: $('#status'),
       timer: $('#timer'),
       correct: $('#correct'),
-      remaining: $('#remaining'),
-      total: $('#total')
+      remaining: $('#remaining')
     };
-    ui.total.textContent = "196";
 
-    // ---------- D3 map setup ----------
-    const svg = d3.select('#map');
-    const g = svg.append('g');
-    const projection = d3.geoNaturalEarth1().fitSize([960, 520], {type:"Sphere"});
-    const path = d3.geoPath(projection);
+    // Load world countries TopoJSON with names in properties.name (world-atlas v2+)
+    // Source: https://github.com/topojson/world-atlas (countries-110m.json)
+    const WORLD_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 
-    g.append('path').datum({type:'Sphere'}).attr('d', path).attr('fill','none');
-    const graticule = d3.geoGraticule();
-    g.append('path').datum(graticule()).attr('d', path).attr('fill','none').attr('stroke','#233046').attr('stroke-width',.5).attr('opacity',.25);
+    fetch(WORLD_URL)
+      .then(r => r.json())
+      .then(topology => {
+        const countries = topojson.feature(topology, topology.objects.countries);
+        // Some entries may be null (missing name); keep those with a name and drop Antarctica
+        features = countries.features
+          .map(f => {
+            // world-atlas v2 puts name in f.properties.name
+            const name = (f.properties && f.properties.name) ? f.properties.name : null;
+            return name ? {...f, properties: {...f.properties, name}} : null;
+          })
+          .filter(Boolean)
+          .filter(f => normalize(f.properties.name) !== "antarctica");
 
-    const landLayer = g.append('g').attr('aria-hidden','true');
-    const focusLayer = g.append('g');
+        // draw dim land background
+        landLayer.selectAll('path.land')
+          .data(features)
+          .enter().append('path')
+          .attr('class','land')
+          .attr('d', path);
 
-    // ---------- game state ----------
-    let features = [];
-    let order = [];
-    let iCurrent = -1;
-    let startedAt = null;
-    let timerId = null;
-    let correctCount = 0;
-    let finished = false;
+        startGame();
+      })
+      .catch(err => {
+        console.error(err);
+        ui.status.textContent = "Failed to load map. Check your connection and refresh.";
+        ui.status.classList.add('bad','pill');
+      });
 
-    // ---------- data sources (multi-mirror + 50m fallback) ----------
-    const SOURCES = [
-      // world-atlas v2 (110m) mirrors
-      { type: 'topojson', url: 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json', obj: 'countries' },
-      { type: 'topojson', url: 'https://fastly.jsdelivr.net/npm/world-atlas@2/countries-110m.json', obj: 'countries' },
-      { type: 'topojson', url: 'https://unpkg.com/world-atlas@2/countries-110m.json', obj: 'countries' },
-      { type: 'topojson', url: 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json?cache-bust=' + Date.now(), obj: 'countries' },
-
-      // world-atlas v2 (50m) mirrors — smaller file
-      { type: 'topojson', url: 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json', obj: 'countries' },
-      { type: 'topojson', url: 'https://fastly.jsdelivr.net/npm/world-atlas@2/countries-50m.json', obj: 'countries' },
-      { type: 'topojson', url: 'https://unpkg.com/world-atlas@2/countries-50m.json', obj: 'countries' },
-
-      // legacy atlas last-resort
-      { type: 'topojson', url: 'https://cdn.jsdelivr.net/npm/world-atlas@1/world/110m.json', obj: 'countries' },
-      { type: 'topojson', url: 'https://unpkg.com/world-atlas@1/world/110m.json', obj: 'countries' },
-    ];
-
-    (async function init() {
-      for (const src of SOURCES) {
-        try {
-          const res = await fetch(src.url, { cache: 'no-store' });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const data = await res.json();
-
-          let countryFeatures = [];
-          if (src.type === 'topojson') {
-            const obj = data.objects[src.obj] || data.objects.countries;
-            if (!obj) throw new Error('TopoJSON countries object missing');
-            const geo = topojson.feature(data, obj);
-            countryFeatures = geo.features;
-          } else {
-            countryFeatures = data.features;
-          }
-
-          // Map, remap names, and filter strictly to your 196 list
-          features = countryFeatures.map(f => {
-              const raw = (f.properties && (f.properties.name || f.properties.NAME || f.properties.admin)) || null;
-              if (!raw) return null;
-              const nRaw = normalize(raw);
-              const remapped = NAME_REMAP.get(nRaw) || raw;
-              const nRemap = normalize(remapped);
-              if (!TARGET_196_SET.has(nRemap)) return null;
-              return { ...f, properties: { ...f.properties, name: remapped } };
-            })
-            .filter(Boolean);
-
-          if (features.length >= 190) { // accept if close; some builds may omit Kosovo
-            console.log(`Loaded ${features.length} features from ${src.url}`);
-            break;
-          } else {
-            console.warn(`Only ${features.length} features from ${src.url}; trying next source...`);
-            features = [];
-          }
-        } catch (e) {
-          console.warn(`Failed loading ${src.url}:`, e);
-          features = [];
-        }
-      }
-
-      if (features.length === 0) {
-        ui.status.innerHTML = "Failed to load the map.<br/>If you opened this file directly, please run a local server (e.g. <code>python -m http.server 5500</code>) or publish to GitHub Pages/Netlify. Also try refreshing or another network.";
-        ui.status.className = 'pill bad';
-        return;
-      }
-
-      // Draw dim land (only included features for clarity)
-      landLayer.selectAll('path.land')
-        .data(features)
-        .enter().append('path')
-        .attr('class','land')
-        .attr('d', path);
-
-      startGame();
-    })();
-
-    // ---------- game logic ----------
     function startGame() {
+      // Shuffle play order
       order = d3.shuffle(d3.range(features.length));
       iCurrent = -1;
       correctCount = 0;
@@ -309,6 +192,7 @@ Zimbabwe
       ui.status.textContent = "Type the country name and press Enter.";
       ui.status.className = 'pill';
 
+      // timer
       startedAt = null;
       ui.timer.textContent = "00:00";
       if (timerId) clearInterval(timerId);
@@ -317,17 +201,15 @@ Zimbabwe
       nextCountry();
       ui.guess.value = "";
       ui.guess.focus();
-
-      if (features.length !== 196) {
-        console.warn(`Note: dataset loaded ${features.length} / 196. If you need exactly 196, try another world-atlas build that includes all geometries (often Kosovo).`);
-      }
     }
 
     function updateTimer() {
       if (!startedAt) return;
       const elapsedMs = Date.now() - startedAt.getTime();
       const s = Math.floor(elapsedMs / 1000);
-      ui.timer.textContent = `${pad2(Math.floor(s / 60))}:${pad2(s % 60)}`;
+      const mm = pad2(Math.floor(s / 60));
+      const ss = pad2(s % 60);
+      ui.timer.textContent = `${mm}:${ss}`;
     }
 
     function showActiveCountry(feature) {
@@ -336,7 +218,7 @@ Zimbabwe
         .datum(feature)
         .attr('class','active country')
         .attr('d', path);
-
+      // fit/center a bit by re-projection to the feature’s bounds
       const [[x0,y0],[x1,y1]] = path.bounds(feature);
       const pad = 20;
       const scale = Math.min(960 / (x1 - x0 + pad), 520 / (y1 - y0 + pad));
@@ -360,23 +242,28 @@ Zimbabwe
     }
 
     function canonicalName(name) {
+      // expand aliases: if user typed an alias, convert to canonical
       const n = normalize(name);
       for (const [canon, list] of ALIASES.entries()) {
-        const c = normalize(canon);
-        if (n === c) return c;
-        if (list.some(a => normalize(a) === n)) return c;
+        const canonN = normalize(canon);
+        if (n === canonN) return canonN;
+        if (list.some(a => normalize(a) === n)) return canonN;
       }
       return n;
     }
 
     function currentAnswerSet() {
       const name = features[ order[iCurrent] ].properties.name;
-      const canon = canonicalName(name);
-      const set = new Set([canon, normalize(name)]);
-      for (const [c, list] of ALIASES.entries()) {
-        if (normalize(c) === canon) list.forEach(a => set.add(normalize(a)));
+      const nCanon = canonicalName(name);
+      const aliasSet = new Set([nCanon]);
+      for (const [canon, list] of ALIASES.entries()) {
+        if (normalize(canon) === nCanon) {
+          list.forEach(a => aliasSet.add(normalize(a)));
+        }
       }
-      return set;
+      // also accept the raw normalized name as a fallback
+      aliasSet.add(normalize(name));
+      return aliasSet;
     }
 
     function submitGuess() {
@@ -403,12 +290,13 @@ Zimbabwe
         $('#mapWrap').classList.remove('correctFlash');
         $('#mapWrap').classList.add('wrongShake');
         setTimeout(() => $('#mapWrap').classList.remove('wrongShake'), 250);
-        ui.guess.focus();
       }
+      ui.guess.focus();
     }
 
     function skipCountry() {
       if (finished || iCurrent < 0) return;
+      // move current index to end
       const idx = order[iCurrent];
       order.push(idx);
       nextCountry();
@@ -423,16 +311,19 @@ Zimbabwe
       if (timerId) clearInterval(timerId);
       ui.remaining.textContent = "0";
       const time = ui.timer.textContent;
-      ui.status.textContent = `🎉 All done! Time: ${time}. Press Restart to play again.`;
+      ui.status.textContent = `🎉 All countries named! Time: ${time}. Press Restart to try again.`;
       ui.status.className = 'pill ok';
+      // zoom out to whole world nicely
       g.attr('transform', d3.zoomIdentity.toString());
     }
 
-    // ---------- events ----------
+    // ------- events -------
     ui.submit.addEventListener('click', submitGuess);
     ui.skip.addEventListener('click', skipCountry);
     ui.restart.addEventListener('click', startGame);
-    ui.guess.addEventListener('keydown', e => { if (e.key === 'Enter') submitGuess(); });
+    ui.guess.addEventListener('keydown', e => {
+      if (e.key === 'Enter') submitGuess();
+    });
   </script>
 </body>
 </html>
