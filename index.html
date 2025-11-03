@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>World Quiz — Name the Country</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Guess the country by its outline on a world map. Time yourself and try to name them all!" />
+  <style>
+    :root {
+      --bg:#0b0f17; --panel:#101826; --text:#e5e7eb; --muted:#9ca3af; --accent:#60a5fa; --ok:#34d399; --bad:#f87171;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(1200px 800px at 10% -10%, #111b2e, #0b0f17); color:var(--text); font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    header{padding:1rem 0}
+    .container{width:min(1100px,92%); margin:0 auto}
+    h1{font-size:clamp(1.4rem,1.4rem + 1vw,2rem); margin:.2rem 0 .6rem}
+    .muted{color:var(--muted)}
+    .panel{background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)); border:1px solid rgba(255,255,255,.06); border-radius:16px; padding:1rem; backdrop-filter:blur(8px)}
+    .ui{display:grid; gap:.75rem; grid-template-columns: 1fr; align-items:center}
+    .row{display:flex; gap:.5rem; align-items:center; flex-wrap:wrap}
+    input[type="text"]{flex:1; min-width:220px; padding:.8rem 1rem; border-radius:12px; border:1px solid rgba(255,255,255,.12); background:var(--panel); color:var(--text)}
+    button{padding:.75rem 1rem; border-radius:12px; border:1px solid rgba(255,255,255,.12); background:var(--panel); color:var(--text); cursor:pointer}
+    button.primary{background:var(--accent); color:#001a33; border-color:transparent; font-weight:700}
+    button[disabled]{opacity:.6; cursor:not-allowed}
+    .pill{display:inline-flex; gap:.4rem; align-items:center; padding:.35rem .6rem; border-radius:999px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); font-size:.9rem}
+    .pill.ok{border-color:rgba(52,211,153,.4); background:rgba(52,211,153,.08)}
+    .pill.bad{border-color:rgba(248,113,113,.4); background:rgba(248,113,113,.08)}
+    #mapWrap{margin-top:1rem}
+    svg{width:100%; height:auto; display:block; background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01)); border:1px solid rgba(255,255,255,.06); border-radius:16px}
+    .land{fill:#0f172a; stroke:#1f2937; stroke-width:.5}
+    .country{fill:none; stroke:transparent}
+    .active{fill:none; stroke:var(--accent); stroke-width:1.8; pointer-events:none}
+    .correctFlash{animation: flashOk .5s}
+    .wrongShake{animation: shake .25s}
+    @keyframes flashOk {from {background:rgba(52,211,153,.15)} to {background:transparent}}
+    @keyframes shake {
+      10%, 90% { transform: translateX(-2px) }
+      20%, 80% { transform: translateX(4px) }
+      30%, 50%, 70% { transform: translateX(-6px) }
+      40%, 60% { transform: translateX(6px) }
+    }
+    footer{padding:2rem 0; text-align:center; color:var(--muted)}
+    .small{font-size:.92rem}
+  </style>
+</head>
+<body>
+  <header class="container">
+    <h1>🌍 World Quiz <span class="muted">— name the country</span></h1>
+    <div class="panel ui">
+      <div class="row">
+        <input id="guess" type="text" placeholder="Type the country name… (press Enter)" autocomplete="off" />
+        <button id="submit" class="primary">Submit</button>
+        <button id="skip">Skip</button>
+        <button id="restart" title="Start over">Restart</button>
+      </div>
+      <div class="row small">
+        <span class="pill" id="status">Loading map…</span>
+        <span class="pill">⏱️ Time: <strong id="timer">00:00</strong></span>
+        <span class="pill">✅ Correct: <strong id="correct">0</strong></span>
+        <span class="pill">🏁 Remaining: <strong id="remaining">0</strong></span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div id="mapWrap">
+      <svg id="map" viewBox="0 0 960 520" aria-label="World map for country quiz"></svg>
+    </div>
+  </main>
+
+  <footer class="container">
+    <small>Data © Natural Earth via world-atlas. This game excludes Antarctica for fairness.</small>
+  </footer>
+
+  <!-- d3 + topojson (served from fast CDNs; fine for GitHub Pages/Netlify) -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+  <script>
+    // ------- utilities -------
+    const $ = sel => document.querySelector(sel);
+    const pad2 = n => n.toString().padStart(2,'0');
+    const normalize = s => s
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // strip diacritics
+      .replace(/[^a-z0-9]+/g,' ')                       // squash punctuation
+      .trim();
+
+    // common aliases & old names (expand as desired)
+    const ALIASES = new Map(Object.entries({
+      "cote d'ivoire": ["ivory coast","cote divoire","cote d ivoire"],
+      "cabo verde": ["cape verde"],
+      "eswatini": ["swaziland"],
+      "myanmar": ["burma"],
+      "russian federation": ["russia"],
+      "democratic republic of the congo": ["drc","congo kinshasa","dr congo"],
+      "republic of the congo": ["congo brazzaville"],
+      "united states of america": ["united states","usa","us","u.s.","u.s.a"],
+      "united kingdom": ["uk","u.k.","great britain","britain"],
+      "tanzania": ["united republic of tanzania"],
+      "iran": ["iran islamic republic of","islamic republic of iran"],
+      "bolivia": ["bolivia plurinational state of"],
+      "moldova": ["republic of moldova"],
+      "south korea": ["korea republic of","republic of korea"],
+      "north korea": ["korea democratic people s republic of","dprk"],
+      "laos": ["lao people s democratic republic","lao pdr"],
+      "syria": ["syrian arab republic"],
+      "uae": ["united arab emirates"],
+      "czechia": ["czech republic"],
+      "timor leste": ["east timor"],
+      "turkiye": ["turkey"],
+      "micronesia": ["federated states of micronesia"],
+      "palestine": ["state of palestine"]
+    }));
+
+    // Set up game state
+    let features = [];      // GeoJSON country features (with .properties.name)
+    let order = [];         // shuffled order of indices into features
+    let iCurrent = -1;      // index within order[]
+    let startedAt = null;   // Date when first shown
+    let timerId = null;
+    let correctCount = 0;
+    let finished = false;
+
+    const svg = d3.select('#map');
+    const g = svg.append('g');
+    const projection = d3.geoNaturalEarth1().fitSize([960, 520], {type:"Sphere"});
+    const path = d3.geoPath(projection);
+
+    // background sphere / graticule (subtle)
+    g.append('path').datum({type:'Sphere'}).attr('class','sphere').attr('d', path).attr('fill','none');
+    const graticule = d3.geoGraticule();
+    g.append('path').datum(graticule()).attr('class','graticule').attr('d', path)
+      .attr('fill','none').attr('stroke','#233046').attr('stroke-width',.5).attr('opacity',.25);
+
+    // land layer to provide context (dim)
+    const landLayer = g.append('g').attr('aria-hidden','true');
+    // active country outline
+    const focusLayer = g.append('g');
+
+    const ui = {
+      guess: $('#guess'),
+      submit: $('#submit'),
+      skip: $('#skip'),
+      restart: $('#restart'),
+      status: $('#status'),
+      timer: $('#timer'),
+      correct: $('#correct'),
+      remaining: $('#remaining')
+    };
+
+    // Load world countries TopoJSON with names in properties.name (world-atlas v2+)
+    // Source: https://github.com/topojson/world-atlas (countries-110m.json)
+    const WORLD_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+
+    fetch(WORLD_URL)
+      .then(r => r.json())
+      .then(topology => {
+        const countries = topojson.feature(topology, topology.objects.countries);
+        // Some entries may be null (missing name); keep those with a name and drop Antarctica
+        features = countries.features
+          .map(f => {
+            // world-atlas v2 puts name in f.properties.name
+            const name = (f.properties && f.properties.name) ? f.properties.name : null;
+            return name ? {...f, properties: {...f.properties, name}} : null;
+          })
+          .filter(Boolean)
+          .filter(f => normalize(f.properties.name) !== "antarctica");
+
+        // draw dim land background
+        landLayer.selectAll('path.land')
+          .data(features)
+          .enter().append('path')
+          .attr('class','land')
+          .attr('d', path);
+
+        startGame();
+      })
+      .catch(err => {
+        console.error(err);
+        ui.status.textContent = "Failed to load map. Check your connection and refresh.";
+        ui.status.classList.add('bad','pill');
+      });
+
+    function startGame() {
+      // Shuffle play order
+      order = d3.shuffle(d3.range(features.length));
+      iCurrent = -1;
+      correctCount = 0;
+      finished = false;
+      ui.correct.textContent = '0';
+      ui.remaining.textContent = features.length;
+      ui.status.textContent = "Type the country name and press Enter.";
+      ui.status.className = 'pill';
+
+      // timer
+      startedAt = null;
+      ui.timer.textContent = "00:00";
+      if (timerId) clearInterval(timerId);
+      timerId = setInterval(updateTimer, 250);
+
+      nextCountry();
+      ui.guess.value = "";
+      ui.guess.focus();
+    }
+
+    function updateTimer() {
+      if (!startedAt) return;
+      const elapsedMs = Date.now() - startedAt.getTime();
+      const s = Math.floor(elapsedMs / 1000);
+      const mm = pad2(Math.floor(s / 60));
+      const ss = pad2(s % 60);
+      ui.timer.textContent = `${mm}:${ss}`;
+    }
+
+    function showActiveCountry(feature) {
+      focusLayer.selectAll('*').remove();
+      focusLayer.append('path')
+        .datum(feature)
+        .attr('class','active country')
+        .attr('d', path);
+      // fit/center a bit by re-projection to the feature’s bounds
+      const [[x0,y0],[x1,y1]] = path.bounds(feature);
+      const pad = 20;
+      const scale = Math.min(960 / (x1 - x0 + pad), 520 / (y1 - y0 + pad));
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      const t = d3.zoomIdentity
+        .translate(960/2, 520/2)
+        .scale(Math.min(scale, 6))
+        .translate(-cx, -cy);
+      g.attr('transform', t.toString());
+    }
+
+    function nextCountry() {
+      iCurrent++;
+      if (iCurrent === 0) startedAt = new Date();
+      if (iCurrent >= order.length) return win();
+      const feature = features[ order[iCurrent] ];
+      showActiveCountry(feature);
+      ui.remaining.textContent = (order.length - iCurrent).toString();
+      ui.status.textContent = `Which country is outlined?`;
+      ui.status.className = 'pill';
+    }
+
+    function canonicalName(name) {
+      // expand aliases: if user typed an alias, convert to canonical
+      const n = normalize(name);
+      for (const [canon, list] of ALIASES.entries()) {
+        const canonN = normalize(canon);
+        if (n === canonN) return canonN;
+        if (list.some(a => normalize(a) === n)) return canonN;
+      }
+      return n;
+    }
+
+    function currentAnswerSet() {
+      const name = features[ order[iCurrent] ].properties.name;
+      const nCanon = canonicalName(name);
+      const aliasSet = new Set([nCanon]);
+      for (const [canon, list] of ALIASES.entries()) {
+        if (normalize(canon) === nCanon) {
+          list.forEach(a => aliasSet.add(normalize(a)));
+        }
+      }
+      // also accept the raw normalized name as a fallback
+      aliasSet.add(normalize(name));
+      return aliasSet;
+    }
+
+    function submitGuess() {
+      if (finished || iCurrent < 0) return;
+      const guess = ui.guess.value;
+      if (!guess.trim()) return;
+
+      const answers = currentAnswerSet();
+      const ok = answers.has(canonicalName(guess));
+
+      if (ok) {
+        correctCount++;
+        ui.correct.textContent = String(correctCount);
+        ui.status.textContent = "Correct!";
+        ui.status.className = 'pill ok';
+        $('#mapWrap').classList.remove('wrongShake');
+        $('#mapWrap').classList.add('correctFlash');
+        setTimeout(() => $('#mapWrap').classList.remove('correctFlash'), 300);
+        ui.guess.value = "";
+        nextCountry();
+      } else {
+        ui.status.textContent = "Not quite — try again or Skip.";
+        ui.status.className = 'pill bad';
+        $('#mapWrap').classList.remove('correctFlash');
+        $('#mapWrap').classList.add('wrongShake');
+        setTimeout(() => $('#mapWrap').classList.remove('wrongShake'), 250);
+      }
+      ui.guess.focus();
+    }
+
+    function skipCountry() {
+      if (finished || iCurrent < 0) return;
+      // move current index to end
+      const idx = order[iCurrent];
+      order.push(idx);
+      nextCountry();
+      ui.status.textContent = "Skipped. It’ll come back later.";
+      ui.status.className = 'pill';
+      ui.guess.value = "";
+      ui.guess.focus();
+    }
+
+    function win() {
+      finished = true;
+      if (timerId) clearInterval(timerId);
+      ui.remaining.textContent = "0";
+      const time = ui.timer.textContent;
+      ui.status.textContent = `🎉 All countries named! Time: ${time}. Press Restart to try again.`;
+      ui.status.className = 'pill ok';
+      // zoom out to whole world nicely
+      g.attr('transform', d3.zoomIdentity.toString());
+    }
+
+    // ------- events -------
+    ui.submit.addEventListener('click', submitGuess);
+    ui.skip.addEventListener('click', skipCountry);
+    ui.restart.addEventListener('click', startGame);
+    ui.guess.addEventListener('keydown', e => {
+      if (e.key === 'Enter') submitGuess();
+    });
+  </script>
+</body>
+</html>
